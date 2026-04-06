@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>IPTV Player</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #14141f;
+    --surface2: #1e1e2e;
+    --accent: #6c5ce7;
+    --accent2: #a29bfe;
+    --text: #e8e8f0;
+    --text2: #8888a0;
+    --danger: #e74c3c;
+    --success: #2ecc71;
+    --radius: 12px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* --- Login Screen --- */
+  #login-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  #login-screen.hidden { display: none; }
+
+  .login-box {
+    background: var(--surface);
+    border-radius: 20px;
+    padding: 32px 24px;
+    width: 100%;
+    max-width: 400px;
+  }
+
+  .login-box h1 {
+    font-size: 24px;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+
+  .login-box p {
+    color: var(--text2);
+    text-align: center;
+    margin-bottom: 24px;
+    font-size: 14px;
+  }
+
+  .input-group {
+    margin-bottom: 16px;
+  }
+
+  .input-group label {
+    display: block;
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 6px;
+  }
+
+  .input-group input {
+    width: 100%;
+    padding: 14px 16px;
+    background: var(--surface2);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .input-group input:focus {
+    border-color: var(--accent);
+  }
+
+  .btn {
+    width: 100%;
+    padding: 16px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+  }
+
+  .btn:active { opacity: 0.8; }
+  .btn:disabled { opacity: 0.5; }
+
+  #login-error {
+    color: var(--danger);
+    text-align: center;
+    margin-top: 12px;
+    font-size: 14px;
+    min-height: 20px;
+  }
+
+  /* --- Main App --- */
+  #app-screen { display: none; }
+  #app-screen.visible { display: flex; flex-direction: column; height: 100vh; }
+
+  /* Player Area */
+  #player-area {
+    position: relative;
+    width: 100%;
+    background: #000;
+    flex-shrink: 0;
+  }
+
+  #player-area.fullscreen {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+  }
+
+  video {
+    width: 100%;
+    display: block;
+    background: #000;
+  }
+
+  #player-area:not(.fullscreen) video {
+    aspect-ratio: 16/9;
+    max-height: 40vh;
+    object-fit: contain;
+  }
+
+  #player-area.fullscreen video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  #player-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+
+  #player-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  #player-overlay .channel-info {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  }
+
+  .player-controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+  }
+
+  .player-controls button {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px;
+    opacity: 0.9;
+  }
+
+  .player-controls button:active { opacity: 0.6; }
+
+  #now-playing {
+    flex: 1;
+    font-size: 13px;
+    color: rgba(255,255,255,0.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .live-badge {
+    background: var(--danger);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  #loading-spinner {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+  }
+
+  #loading-spinner.visible { display: block; }
+
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(255,255,255,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Channel List */
+  #channel-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #category-bar {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    overflow-x: auto;
+    flex-shrink: 0;
+    background: var(--surface);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  #category-bar::-webkit-scrollbar { display: none; }
+
+  .cat-pill {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    background: var(--surface2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    color: var(--text2);
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+
+  .cat-pill.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  .cat-pill:active { transform: scale(0.95); }
+
+  #search-bar {
+    padding: 8px 16px;
+    flex-shrink: 0;
+  }
+
+  #search-input {
+    width: 100%;
+    padding: 12px 16px 12px 40px;
+    background: var(--surface2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 15px;
+    outline: none;
+  }
+
+  #search-input:focus { border-color: var(--accent); }
+
+  .search-wrap {
+    position: relative;
+  }
+
+  .search-wrap::before {
+    content: '\1F50D';
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    opacity: 0.5;
+  }
+
+  #channel-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 12px 80px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .channel-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .channel-item:active,
+  .channel-item.active {
+    background: var(--surface2);
+  }
+
+  .channel-item.playing {
+    background: rgba(108, 92, 231, 0.15);
+    border: 1px solid rgba(108, 92, 231, 0.3);
+  }
+
+  .ch-logo {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+    font-size: 18px;
+  }
+
+  .ch-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .ch-info { flex: 1; min-width: 0; }
+
+  .ch-name {
+    font-size: 15px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ch-cat {
+    font-size: 12px;
+    color: var(--text2);
+    margin-top: 2px;
+  }
+
+  .ch-playing-icon {
+    color: var(--accent);
+    font-size: 18px;
+    flex-shrink: 0;
+    display: none;
+  }
+
+  .channel-item.playing .ch-playing-icon { display: block; }
+
+  #channel-count {
+    text-align: center;
+    padding: 12px;
+    color: var(--text2);
+    font-size: 13px;
+  }
+
+  /* Favorites bar */
+  .fav-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px;
+    flex-shrink: 0;
+  }
+
+  /* Error toast */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--surface2);
+    color: var(--text);
+    padding: 12px 24px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    z-index: 2000;
+    transition: transform 0.3s ease;
+    border: 1px solid rgba(255,255,255,0.1);
+    max-width: 90vw;
+    text-align: center;
+  }
+
+  #toast.visible {
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* Landscape fullscreen adjustments */
+  @media (orientation: landscape) {
+    #player-area:not(.fullscreen) video {
+      max-height: 60vh;
+    }
+  }
+
+  /* EPG info */
+  .epg-now {
+    font-size: 11px;
+    color: var(--success);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>IPTV Player</h1>
+    <p>Anslut till din IPTV-tjänst</p>
+    <div class="input-group">
+      <label>Server URL</label>
+      <input type="url" id="inp-server" placeholder="http://server:port" autocomplete="off">
+    </div>
+    <div class="input-group">
+      <label>Användarnamn</label>
+      <input type="text" id="inp-user" placeholder="Användarnamn" autocomplete="off">
+    </div>
+    <div class="input-group">
+      <label>Lösenord</label>
+      <input type="text" id="inp-pass" placeholder="Lösenord" autocomplete="off">
+    </div>
+    <button class="btn" id="btn-login">Anslut</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- App Screen -->
+<div id="app-screen">
+  <!-- Player -->
+  <div id="player-area">
+    <video id="video" playsinline autoplay></video>
+    <div id="loading-spinner"><div class="spinner"></div></div>
+    <div class="player-controls">
+      <button id="btn-play" title="Play/Pause">&#9654;</button>
+      <span id="now-playing">Välj en kanal</span>
+      <span class="live-badge" id="live-badge" style="display:none">LIVE</span>
+      <button id="btn-fullscreen" title="Fullscreen">&#9974;</button>
+    </div>
+  </div>
+
+  <!-- Channel area -->
+  <div id="channel-area">
+    <div id="category-bar"></div>
+    <div id="search-bar">
+      <div class="search-wrap">
+        <input type="text" id="search-input" placeholder="Sök kanaler...">
+      </div>
+    </div>
+    <div id="channel-count"></div>
+    <div id="channel-list"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
+<script>
+(function() {
+  'use strict';
+
+  // --- State ---
+  let config = { server: '', user: '', pass: '' };
+  let categories = [];
+  let allChannels = [];
+  let filteredChannels = [];
+  let currentCatId = 'all';
+  let currentChannel = null;
+  let hls = null;
+  let favorites = new Set();
+  let overlayTimeout = null;
+
+  // --- DOM ---
+  const $ = id => document.getElementById(id);
+  const loginScreen = $('login-screen');
+  const appScreen = $('app-screen');
+  const video = $('video');
+  const playerArea = $('player-area');
+  const loadingSpinner = $('loading-spinner');
+  const nowPlaying = $('now-playing');
+  const liveBadge = $('live-badge');
+  const categoryBar = $('category-bar');
+  const channelList = $('channel-list');
+  const channelCount = $('channel-count');
+  const searchInput = $('search-input');
+  const toast = $('toast');
+  const btnPlay = $('btn-play');
+  const btnFullscreen = $('btn-fullscreen');
+
+  // --- Init ---
+  function init() {
+    loadSaved();
+    $('btn-login').addEventListener('click', doLogin);
+    btnPlay.addEventListener('click', togglePlay);
+    btnFullscreen.addEventListener('click', toggleFullscreen);
+    searchInput.addEventListener('input', debounce(filterChannels, 200));
+    video.addEventListener('playing', () => {
+      loadingSpinner.classList.remove('visible');
+      btnPlay.innerHTML = '&#9646;&#9646;';
+      liveBadge.style.display = '';
+    });
+    video.addEventListener('waiting', () => loadingSpinner.classList.add('visible'));
+    video.addEventListener('error', () => {
+      loadingSpinner.classList.remove('visible');
+      showToast('Kunde inte spela kanalen. Försök igen.');
+    });
+    playerArea.addEventListener('click', (e) => {
+      if (e.target.tagName === 'BUTTON') return;
+      if (playerArea.classList.contains('fullscreen')) {
+        toggleFullscreen();
+      }
+    });
+
+    // Auto-fill saved credentials
+    if (config.server) {
+      $('inp-server').value = config.server;
+      $('inp-user').value = config.user;
+      $('inp-pass').value = config.pass;
+    }
+  }
+
+  function loadSaved() {
+    try {
+      const saved = localStorage.getItem('iptv_config');
+      if (saved) config = JSON.parse(saved);
+      const favs = localStorage.getItem('iptv_favs');
+      if (favs) favorites = new Set(JSON.parse(favs));
+    } catch(e) {}
+  }
+
+  function saveConfig() {
+    try {
+      localStorage.setItem('iptv_config', JSON.stringify(config));
+    } catch(e) {}
+  }
+
+  function saveFavorites() {
+    try {
+      localStorage.setItem('iptv_favs', JSON.stringify([...favorites]));
+    } catch(e) {}
+  }
+
+  // --- API ---
+  function apiUrl(action, extra = '') {
+    return `${config.server}/player_api.php?username=${encodeURIComponent(config.user)}&password=${encodeURIComponent(config.pass)}&action=${action}${extra}`;
+  }
+
+  function streamUrl(streamId, ext = 'm3u8') {
+    return `${config.server}/live/${encodeURIComponent(config.user)}/${encodeURIComponent(config.pass)}/${streamId}.${ext}`;
+  }
+
+  async function apiFetch(action, extra = '') {
+    const resp = await fetch(apiUrl(action, extra));
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  }
+
+  // --- Login ---
+  async function doLogin() {
+    const server = $('inp-server').value.trim().replace(/\/+$/, '');
+    const user = $('inp-user').value.trim();
+    const pass = $('inp-pass').value.trim();
+
+    if (!server || !user || !pass) {
+      $('login-error').textContent = 'Fyll i alla fält';
+      return;
+    }
+
+    config = { server, user, pass };
+    $('btn-login').disabled = true;
+    $('login-error').textContent = 'Ansluter...';
+
+    try {
+      // Test connection
+      const info = await apiFetch('get_live_categories');
+      if (!Array.isArray(info)) throw new Error('Ogiltigt svar');
+
+      saveConfig();
+      categories = info;
+      await loadChannels();
+      showApp();
+    } catch(e) {
+      $('login-error').textContent = 'Kunde inte ansluta. Kontrollera uppgifterna.';
+      console.error('Login error:', e);
+    } finally {
+      $('btn-login').disabled = false;
+    }
+  }
+
+  async function loadChannels() {
+    try {
+      allChannels = await apiFetch('get_live_streams');
+      if (!Array.isArray(allChannels)) allChannels = [];
+    } catch(e) {
+      allChannels = [];
+      console.error('Failed to load channels:', e);
+    }
+  }
+
+  // --- App ---
+  function showApp() {
+    loginScreen.classList.add('hidden');
+    appScreen.classList.add('visible');
+    renderCategories();
+    filterChannels();
+  }
+
+  function renderCategories() {
+    let html = `<div class="cat-pill active" data-id="all">Alla</div>`;
+    html += `<div class="cat-pill" data-id="favs">&#11088; Favoriter</div>`;
+    for (const cat of categories) {
+      html += `<div class="cat-pill" data-id="${cat.category_id}">${esc(cat.category_name)}</div>`;
+    }
+    categoryBar.innerHTML = html;
+
+    categoryBar.querySelectorAll('.cat-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        categoryBar.querySelector('.active')?.classList.remove('active');
+        pill.classList.add('active');
+        currentCatId = pill.dataset.id;
+        filterChannels();
+      });
+    });
+  }
+
+  function filterChannels() {
+    const query = searchInput.value.trim().toLowerCase();
+
+    filteredChannels = allChannels.filter(ch => {
+      if (currentCatId === 'favs') {
+        if (!favorites.has(String(ch.stream_id))) return false;
+      } else if (currentCatId !== 'all') {
+        if (String(ch.category_id) !== String(currentCatId)) return false;
+      }
+      if (query && !ch.name.toLowerCase().includes(query)) return false;
+      return true;
+    });
+
+    renderChannels();
+  }
+
+  function renderChannels() {
+    channelCount.textContent = `${filteredChannels.length} kanaler`;
+
+    if (filteredChannels.length === 0) {
+      channelList.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text2)">Inga kanaler hittades</div>';
+      return;
+    }
+
+    // Render in batches for performance
+    const fragment = document.createDocumentFragment();
+    const limit = Math.min(filteredChannels.length, 200);
+
+    for (let i = 0; i < limit; i++) {
+      const ch = filteredChannels[i];
+      const div = document.createElement('div');
+      div.className = 'channel-item' + (currentChannel && currentChannel.stream_id === ch.stream_id ? ' playing' : '');
+      const isFav = favorites.has(String(ch.stream_id));
+
+      div.innerHTML = `
+        <div class="ch-logo">
+          ${ch.stream_icon ? `<img src="${esc(ch.stream_icon)}" loading="lazy" onerror="this.parentElement.textContent='TV'">` : 'TV'}
+        </div>
+        <div class="ch-info">
+          <div class="ch-name">${esc(ch.name)}</div>
+          <div class="ch-cat">${esc(getCategoryName(ch.category_id))}</div>
+          ${ch.epg_channel_id ? `<div class="epg-now" id="epg-${ch.stream_id}"></div>` : ''}
+        </div>
+        <button class="fav-btn" data-sid="${ch.stream_id}">${isFav ? '&#11088;' : '&#9734;'}</button>
+        <span class="ch-playing-icon">&#9654;</span>
+      `;
+
+      div.querySelector('.ch-info').addEventListener('click', () => playChannel(ch));
+      div.querySelector('.ch-logo').addEventListener('click', () => playChannel(ch));
+      div.querySelector('.fav-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavorite(ch.stream_id, e.currentTarget);
+      });
+
+      fragment.appendChild(div);
+    }
+
+    channelList.innerHTML = '';
+    channelList.appendChild(fragment);
+
+    if (filteredChannels.length > limit) {
+      const more = document.createElement('div');
+      more.style.cssText = 'text-align:center;padding:16px;color:var(--text2);font-size:13px';
+      more.textContent = `Visar ${limit} av ${filteredChannels.length} kanaler. Använd sök för att hitta fler.`;
+      channelList.appendChild(more);
+    }
+  }
+
+  function getCategoryName(catId) {
+    const cat = categories.find(c => String(c.category_id) === String(catId));
+    return cat ? cat.category_name : '';
+  }
+
+  function toggleFavorite(streamId, btn) {
+    const sid = String(streamId);
+    if (favorites.has(sid)) {
+      favorites.delete(sid);
+      btn.innerHTML = '&#9734;';
+    } else {
+      favorites.add(sid);
+      btn.innerHTML = '&#11088;';
+    }
+    saveFavorites();
+  }
+
+  // --- Player ---
+  function playChannel(ch) {
+    currentChannel = ch;
+    nowPlaying.textContent = ch.name;
+    liveBadge.style.display = 'none';
+    loadingSpinner.classList.add('visible');
+    btnPlay.innerHTML = '&#9654;';
+
+    // Destroy previous
+    if (hls) {
+      hls.destroy();
+      hls = null;
+    }
+
+    const url = streamUrl(ch.stream_id, 'm3u8');
+
+    if (Hls.isSupported()) {
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+      });
+      hls.loadSource(url);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          console.error('HLS fatal error:', data);
+          // Try TS format as fallback
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            tryTsFallback(ch);
+          } else {
+            showToast('Fel vid uppspelning. Försök igen.');
+            loadingSpinner.classList.remove('visible');
+          }
+        }
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS
+      video.src = url;
+      video.addEventListener('loadedmetadata', () => {
+        video.play().catch(() => {});
+      }, { once: true });
+    } else {
+      tryTsFallback(ch);
+    }
+
+    // Update channel list highlights
+    channelList.querySelectorAll('.channel-item').forEach(item => item.classList.remove('playing'));
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function tryTsFallback(ch) {
+    if (hls) { hls.destroy(); hls = null; }
+    const tsUrl = streamUrl(ch.stream_id, 'ts');
+    video.src = tsUrl;
+    video.play().catch(() => {
+      showToast('Kunde inte spela kanalen.');
+      loadingSpinner.classList.remove('visible');
+    });
+  }
+
+  function togglePlay() {
+    if (video.paused) {
+      video.play().catch(() => {});
+      btnPlay.innerHTML = '&#9646;&#9646;';
+    } else {
+      video.pause();
+      btnPlay.innerHTML = '&#9654;';
+    }
+  }
+
+  function toggleFullscreen() {
+    if (playerArea.classList.contains('fullscreen')) {
+      playerArea.classList.remove('fullscreen');
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      try { screen.orientation.unlock(); } catch(e) {}
+    } else {
+      playerArea.classList.add('fullscreen');
+      if (playerArea.requestFullscreen) playerArea.requestFullscreen().catch(() => {});
+      try { screen.orientation.lock('landscape').catch(() => {}); } catch(e) {}
+    }
+  }
+
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+      playerArea.classList.remove('fullscreen');
+    }
+  });
+
+  // --- Utilities ---
+  function esc(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('visible');
+    setTimeout(() => toast.classList.remove('visible'), 3000);
+  }
+
+  // --- Start ---
+  init();
+})();
+</script>
+</body>
+</html>
