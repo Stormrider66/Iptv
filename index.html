@@ -439,6 +439,42 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+
+  /* Cast status */
+  #cast-status {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(108, 92, 231, 0.15);
+    border-bottom: 1px solid rgba(108, 92, 231, 0.3);
+    font-size: 13px;
+  }
+
+  #cast-status.visible { display: flex; }
+
+  #cast-status .cast-icon { font-size: 16px; }
+  #cast-status .cast-device { flex: 1; color: var(--accent2); }
+
+  #cast-status button {
+    background: var(--accent);
+    border: none;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  #btn-cast.casting {
+    color: var(--accent2) !important;
+    animation: pulse-cast 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-cast {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
 </style>
 </head>
 <body>
@@ -475,8 +511,16 @@
       <button id="btn-play" title="Play/Pause">&#9654;</button>
       <span id="now-playing">Välj en kanal</span>
       <span class="live-badge" id="live-badge" style="display:none">LIVE</span>
+      <button id="btn-cast" title="Cast" style="display:none">&#128225;</button>
       <button id="btn-fullscreen" title="Fullscreen">&#9974;</button>
     </div>
+  </div>
+
+  <!-- Cast Status -->
+  <div id="cast-status">
+    <span class="cast-icon">&#128225;</span>
+    <span class="cast-device" id="cast-device-name">Ansluter...</span>
+    <button id="btn-cast-stop">Sluta casta</button>
   </div>
 
   <!-- Channel area -->
@@ -496,6 +540,7 @@
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7"></script>
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
 <script>
 (function() {
   'use strict';
@@ -510,6 +555,8 @@
   let hls = null;
   let favorites = new Set();
   let overlayTimeout = null;
+  let castSession = null;
+  let isCasting = false;
 
   // --- DOM ---
   const $ = id => document.getElementById(id);
@@ -527,6 +574,9 @@
   const toast = $('toast');
   const btnPlay = $('btn-play');
   const btnFullscreen = $('btn-fullscreen');
+  const btnCast = $('btn-cast');
+  const castStatus = $('cast-status');
+  const castDeviceName = $('cast-device-name');
 
   // --- Init ---
   function init() {
@@ -534,6 +584,9 @@
     $('btn-login').addEventListener('click', doLogin);
     btnPlay.addEventListener('click', togglePlay);
     btnFullscreen.addEventListener('click', toggleFullscreen);
+    btnCast.addEventListener('click', startCast);
+    $('btn-cast-stop').addEventListener('click', stopCast);
+    initCast();
     searchInput.addEventListener('input', debounce(filterChannels, 200));
     video.addEventListener('playing', () => {
       loadingSpinner.classList.remove('visible');
@@ -799,6 +852,11 @@
       tryTsFallback(ch);
     }
 
+    // Cast if connected
+    if (isCasting) {
+      castCurrentChannel();
+    }
+
     // Update channel list highlights
     channelList.querySelectorAll('.channel-item').forEach(item => item.classList.remove('playing'));
     // Scroll to top
@@ -842,6 +900,118 @@
       playerArea.classList.remove('fullscreen');
     }
   });
+
+  // --- Google Cast ---
+  function initCast() {
+    window['__onGCastApiAvailable'] = function(isAvailable) {
+      if (!isAvailable) return;
+
+      const context = cast.framework.CastContext.getInstance();
+      context.setOptions({
+        receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+        autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+      });
+
+      // Show cast button when available
+      btnCast.style.display = '';
+
+      context.addEventListener(
+        cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+        (event) => {
+          switch (event.sessionState) {
+            case cast.framework.SessionState.SESSION_STARTED:
+            case cast.framework.SessionState.SESSION_RESUMED:
+              onCastConnected();
+              break;
+            case cast.framework.SessionState.SESSION_ENDED:
+              onCastDisconnected();
+              break;
+          }
+        }
+      );
+    };
+  }
+
+  function onCastConnected() {
+    castSession = cast.framework.CastContext.getInstance().getCurrentSession();
+    isCasting = true;
+    btnCast.classList.add('casting');
+    const deviceName = castSession.getCastDevice().friendlyName || 'Chromecast';
+    castDeviceName.textContent = 'Castar till ' + deviceName;
+    castStatus.classList.add('visible');
+    showToast('Ansluten till ' + deviceName);
+
+    // If already playing a channel, cast it
+    if (currentChannel) {
+      castCurrentChannel();
+    }
+  }
+
+  function onCastDisconnected() {
+    castSession = null;
+    isCasting = false;
+    btnCast.classList.remove('casting');
+    castStatus.classList.remove('visible');
+    showToast('Casting avslutad');
+  }
+
+  function startCast() {
+    const context = cast.framework.CastContext.getInstance();
+    if (isCasting) {
+      // Already casting - show device chooser to switch/disconnect
+      context.requestSession().catch(() => {});
+    } else {
+      context.requestSession().then(
+        () => {},
+        (err) => {
+          if (err !== 'cancel') {
+            showToast('Kunde inte ansluta till Cast-enhet');
+          }
+        }
+      );
+    }
+  }
+
+  function stopCast() {
+    const context = cast.framework.CastContext.getInstance();
+    context.endCurrentSession(true);
+  }
+
+  function castCurrentChannel() {
+    if (!castSession || !currentChannel) return;
+
+    // Try m3u8 first, then ts
+    const hlsUrl = streamUrl(currentChannel.stream_id, 'm3u8');
+    const tsUrl = streamUrl(currentChannel.stream_id, 'ts');
+
+    const mediaInfo = new chrome.cast.media.MediaInfo(hlsUrl, 'application/x-mpegurl');
+    mediaInfo.metadata = new chrome.cast.media.GenericMediaMetadata();
+    mediaInfo.metadata.title = currentChannel.name;
+    mediaInfo.metadata.subtitle = getCategoryName(currentChannel.category_id) || 'Live TV';
+    if (currentChannel.stream_icon) {
+      mediaInfo.metadata.images = [new chrome.cast.Image(currentChannel.stream_icon)];
+    }
+
+    const request = new chrome.cast.media.LoadRequest(mediaInfo);
+    request.autoplay = true;
+
+    castSession.loadMedia(request).then(
+      () => {
+        showToast('Spelar ' + currentChannel.name + ' på Cast');
+      },
+      () => {
+        // Fallback to TS format
+        const mediaInfoTs = new chrome.cast.media.MediaInfo(tsUrl, 'video/mp2t');
+        mediaInfoTs.metadata = mediaInfo.metadata;
+        const requestTs = new chrome.cast.media.LoadRequest(mediaInfoTs);
+        requestTs.autoplay = true;
+        castSession.loadMedia(requestTs).then(
+          () => showToast('Spelar ' + currentChannel.name + ' på Cast'),
+          () => showToast('Kunde inte casta kanalen')
+        );
+      }
+    );
+  }
 
   // --- Utilities ---
   function esc(s) {
