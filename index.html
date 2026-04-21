@@ -591,22 +591,22 @@
       <button class="cast-option" id="cast-vlc">
         <span>&#9654;</span>
         <div>
-          <strong>Öppna i extern spelare</strong>
-          <small>VLC, MX Player eller annan app med Cast-stöd</small>
+          <strong>Öppna i VLC</strong>
+          <small>Spelar direkt i VLC — casta därifrån till Vardagsrum</small>
         </div>
       </button>
       <button class="cast-option" id="cast-share">
         <span>&#128228;</span>
         <div>
-          <strong>Dela stream-länk</strong>
-          <small>Dela till valfri app</small>
+          <strong>Öppna stream i annan app</strong>
+          <small>Välj app att spela videon i</small>
         </div>
       </button>
       <button class="cast-option" id="cast-copy">
         <span>&#128203;</span>
         <div>
           <strong>Kopiera stream-länk</strong>
-          <small>Klistra in i VLC eller annan spelare</small>
+          <small>Öppna VLC → Mer → Ström → klistra in</small>
         </div>
       </button>
       <button class="cast-menu-close">Stäng</button>
@@ -1095,32 +1095,27 @@
   function castOpenExternal() {
     closeCastMenu();
     const url = getCurrentStreamUrl();
-    // Android intent to open in external video player
-    const intentUrl = 'intent:' + url + '#Intent;type=video/*;end';
-    window.location.href = intentUrl;
+    // Try VLC-specific intent first
+    const vlcIntent = 'intent:' + url + '#Intent;package=org.videolan.vlc;type=video/*;scheme=http;end';
+    window.location.href = vlcIntent;
   }
 
   function castShare() {
     closeCastMenu();
     const url = getCurrentStreamUrl();
-    if (navigator.share) {
-      navigator.share({
-        title: currentChannel.name + ' - IPTV',
-        text: currentChannel.name,
-        url: url
-      }).catch(() => {});
-    } else {
-      castCopyLink();
-    }
+    // Open stream URL directly - Android will offer app chooser
+    const a = document.createElement('a');
+    a.href = url;
+    a.type = 'video/mp2t';
+    a.click();
   }
 
   function castCopyLink() {
     closeCastMenu();
     const url = getCurrentStreamUrl();
     navigator.clipboard.writeText(url).then(() => {
-      showToast('Stream-länk kopierad! Klistra in i VLC → Casta');
+      showToast('Stream-länk kopierad!');
     }).catch(() => {
-      // Fallback
       const ta = document.createElement('textarea');
       ta.value = url;
       document.body.appendChild(ta);
