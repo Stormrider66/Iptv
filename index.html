@@ -475,6 +475,73 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
   }
+
+  /* Cast Menu */
+  #cast-menu {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 3000;
+  }
+
+  .cast-menu-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+  }
+
+  .cast-menu-content {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-radius: 20px 20px 0 0;
+    padding: 24px 16px;
+  }
+
+  .cast-menu-content h3 {
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 18px;
+  }
+
+  .cast-option {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 16px;
+    background: var(--surface2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--radius);
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+
+  .cast-option:active { opacity: 0.7; }
+
+  .cast-option > span {
+    font-size: 24px;
+    width: 40px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .cast-option strong { display: block; margin-bottom: 2px; }
+  .cast-option small { color: var(--text2); font-size: 12px; }
+
+  .cast-menu-close {
+    width: 100%;
+    padding: 14px;
+    background: none;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius);
+    color: var(--text2);
+    font-size: 15px;
+    cursor: pointer;
+    margin-top: 6px;
+  }
 </style>
 </head>
 <body>
@@ -513,6 +580,36 @@
       <span class="live-badge" id="live-badge" style="display:none">LIVE</span>
       <button id="btn-cast" title="Cast" style="font-size:14px;background:rgba(108,92,231,0.6);padding:6px 12px;border-radius:8px;display:flex;align-items:center;gap:4px"><span style="font-size:18px">&#128225;</span> Cast</button>
       <button id="btn-fullscreen" title="Fullscreen">&#9974;</button>
+    </div>
+  </div>
+
+  <!-- Cast Menu -->
+  <div id="cast-menu" style="display:none">
+    <div class="cast-menu-overlay"></div>
+    <div class="cast-menu-content">
+      <h3>Casta till TV</h3>
+      <button class="cast-option" id="cast-vlc">
+        <span>&#9654;</span>
+        <div>
+          <strong>Öppna i extern spelare</strong>
+          <small>VLC, MX Player eller annan app med Cast-stöd</small>
+        </div>
+      </button>
+      <button class="cast-option" id="cast-share">
+        <span>&#128228;</span>
+        <div>
+          <strong>Dela stream-länk</strong>
+          <small>Dela till valfri app</small>
+        </div>
+      </button>
+      <button class="cast-option" id="cast-copy">
+        <span>&#128203;</span>
+        <div>
+          <strong>Kopiera stream-länk</strong>
+          <small>Klistra in i VLC eller annan spelare</small>
+        </div>
+      </button>
+      <button class="cast-menu-close">Stäng</button>
     </div>
   </div>
 
@@ -586,6 +683,11 @@
     btnFullscreen.addEventListener('click', toggleFullscreen);
     btnCast.addEventListener('click', startCast);
     $('btn-cast-stop').addEventListener('click', stopCast);
+    $('cast-vlc').addEventListener('click', castOpenExternal);
+    $('cast-share').addEventListener('click', castShare);
+    $('cast-copy').addEventListener('click', castCopyLink);
+    $('cast-menu').querySelector('.cast-menu-overlay').addEventListener('click', closeCastMenu);
+    $('cast-menu').querySelector('.cast-menu-close').addEventListener('click', closeCastMenu);
     initCast();
     searchInput.addEventListener('input', debounce(filterChannels, 200));
     video.addEventListener('playing', () => {
@@ -956,23 +1058,77 @@
   }
 
   function startCast() {
-    if (!castSdkReady) {
-      showToast('Tips: Tryck ⋮ i Chrome → "Casta" för att skicka till din Google Home');
+    if (castSdkReady) {
+      const context = cast.framework.CastContext.getInstance();
+      if (isCasting) {
+        context.requestSession().catch(() => {});
+      } else {
+        context.requestSession().then(
+          () => {},
+          (err) => {
+            if (err !== 'cancel') showToast('Kunde inte ansluta till Cast-enhet');
+          }
+        );
+      }
       return;
     }
-    const context = cast.framework.CastContext.getInstance();
-    if (isCasting) {
-      context.requestSession().catch(() => {});
-    } else {
-      context.requestSession().then(
-        () => {},
-        (err) => {
-          if (err !== 'cancel') {
-            showToast('Kunde inte ansluta till Cast-enhet');
-          }
-        }
-      );
+
+    if (!currentChannel) {
+      showToast('Välj en kanal först');
+      return;
     }
+
+    // Show cast menu with options
+    const castMenu = $('cast-menu');
+    castMenu.style.display = '';
+  }
+
+  function closeCastMenu() {
+    $('cast-menu').style.display = 'none';
+  }
+
+  function getCurrentStreamUrl() {
+    if (!currentChannel) return '';
+    return streamUrl(currentChannel.stream_id, 'm3u8');
+  }
+
+  function castOpenExternal() {
+    closeCastMenu();
+    const url = getCurrentStreamUrl();
+    // Android intent to open in external video player
+    const intentUrl = 'intent:' + url + '#Intent;type=video/*;end';
+    window.location.href = intentUrl;
+  }
+
+  function castShare() {
+    closeCastMenu();
+    const url = getCurrentStreamUrl();
+    if (navigator.share) {
+      navigator.share({
+        title: currentChannel.name + ' - IPTV',
+        text: currentChannel.name,
+        url: url
+      }).catch(() => {});
+    } else {
+      castCopyLink();
+    }
+  }
+
+  function castCopyLink() {
+    closeCastMenu();
+    const url = getCurrentStreamUrl();
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('Stream-länk kopierad! Klistra in i VLC → Casta');
+    }).catch(() => {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('Stream-länk kopierad!');
+    });
   }
 
   function stopCast() {
