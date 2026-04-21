@@ -531,6 +531,30 @@
   .cast-option strong { display: block; margin-bottom: 2px; }
   .cast-option small { color: var(--text2); font-size: 12px; }
 
+  #cast-url-box {
+    width: 100%;
+    padding: 12px;
+    background: var(--bg);
+    border: 2px solid var(--accent);
+    border-radius: var(--radius);
+    color: var(--accent2);
+    font-size: 13px;
+    word-break: break-all;
+    margin-bottom: 10px;
+    user-select: all;
+    -webkit-user-select: all;
+    text-align: center;
+    display: none;
+  }
+
+  #cast-url-label {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text2);
+    margin-bottom: 6px;
+    display: none;
+  }
+
   .cast-menu-close {
     width: 100%;
     padding: 14px;
@@ -605,10 +629,12 @@
       <button class="cast-option" id="cast-copy">
         <span>&#128203;</span>
         <div>
-          <strong>Kopiera stream-länk</strong>
-          <small>Öppna VLC → Mer → Ström → klistra in</small>
+          <strong>Visa stream-länk</strong>
+          <small>Markera → Kopiera → klistra in i VLC</small>
         </div>
       </button>
+      <div id="cast-url-label">Tryck och håll för att markera och kopiera:</div>
+      <div id="cast-url-box"></div>
       <button class="cast-menu-close">Stäng</button>
     </div>
   </div>
@@ -1111,19 +1137,26 @@
   }
 
   function castCopyLink() {
-    closeCastMenu();
     const url = getCurrentStreamUrl();
-    navigator.clipboard.writeText(url).then(() => {
-      showToast('Stream-länk kopierad!');
-    }).catch(() => {
-      const ta = document.createElement('textarea');
-      ta.value = url;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      showToast('Stream-länk kopierad!');
-    });
+    const urlBox = $('cast-url-box');
+    const urlLabel = $('cast-url-label');
+    urlBox.textContent = url;
+    urlBox.style.display = 'block';
+    urlLabel.style.display = 'block';
+
+    // Also try clipboard
+    try {
+      navigator.clipboard.writeText(url).then(() => {
+        showToast('Stream-länk kopierad!');
+      }).catch(() => {});
+    } catch(e) {}
+
+    // Select the text
+    const range = document.createRange();
+    range.selectNodeContents(urlBox);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
 
   function stopCast() {
