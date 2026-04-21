@@ -511,7 +511,7 @@
       <button id="btn-play" title="Play/Pause">&#9654;</button>
       <span id="now-playing">Välj en kanal</span>
       <span class="live-badge" id="live-badge" style="display:none">LIVE</span>
-      <button id="btn-cast" title="Cast" style="display:none">&#128225;</button>
+      <button id="btn-cast" title="Cast">&#128225;</button>
       <button id="btn-fullscreen" title="Fullscreen">&#9974;</button>
     </div>
   </div>
@@ -902,18 +902,18 @@
   });
 
   // --- Google Cast ---
+  let castSdkReady = false;
+
   function initCast() {
     window['__onGCastApiAvailable'] = function(isAvailable) {
       if (!isAvailable) return;
+      castSdkReady = true;
 
       const context = cast.framework.CastContext.getInstance();
       context.setOptions({
         receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
         autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
       });
-
-      // Show cast button when available
-      btnCast.style.display = '';
 
       context.addEventListener(
         cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
@@ -956,9 +956,12 @@
   }
 
   function startCast() {
+    if (!castSdkReady) {
+      showToast('Tips: Tryck ⋮ i Chrome → "Casta" för att skicka till din Google Home');
+      return;
+    }
     const context = cast.framework.CastContext.getInstance();
     if (isCasting) {
-      // Already casting - show device chooser to switch/disconnect
       context.requestSession().catch(() => {});
     } else {
       context.requestSession().then(
