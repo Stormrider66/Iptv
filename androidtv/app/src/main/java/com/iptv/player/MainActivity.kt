@@ -1,6 +1,10 @@
 package com.iptv.player
 
+import android.app.PictureInPictureParams
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -36,6 +40,34 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Enter PiP when the user leaves the app while watching. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        maybeEnterPip()
+    }
+
+    fun maybeEnterPip() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!vm.isPlayerScreen) return
+        if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) return
+        val params = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .build()
+        try {
+            enterPictureInPictureMode(params)
+        } catch (e: Exception) {
+            // Device may not support PiP in this state
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        vm.inPipMode = isInPictureInPictureMode
     }
 }
 

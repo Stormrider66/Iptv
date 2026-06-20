@@ -35,6 +35,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val currentScreen: Screen
         get() = backStack.lastOrNull() ?: Screen.Login
 
+    val isPlayerScreen: Boolean
+        get() = currentScreen is Screen.LivePlayer || currentScreen is Screen.VodPlayer
+
+    /** True while the activity is in picture-in-picture mode. */
+    var inPipMode by androidx.compose.runtime.mutableStateOf(false)
+
     init {
         if (prefs.isLoggedIn) {
             api = XtreamApi(prefs.server, prefs.username, prefs.password)
@@ -54,6 +60,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun logout() {
         prefs.clearCredentials()
         api = null
+        liveCatsCache = null
+        movieCatsCache = null
+        seriesCatsCache = null
+        allLiveCache = null
+        allMoviesCache = null
+        allSeriesCache = null
         backStack.clear()
         backStack.add(Screen.Login)
     }
@@ -79,6 +91,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prefs.lastChannelId = streamId
     }
     fun recents() = prefs.recents()
+
+    // --- Resume playback ---
+
+    fun savePosition(key: String, positionMs: Long, durationMs: Long) =
+        prefs.savePosition(key, positionMs, durationMs)
+    fun getPosition(key: String) = prefs.getPosition(key)
+    fun clearPosition(key: String) = prefs.clearPosition(key)
+
+    // --- Settings actions ---
+
+    fun clearFavorites() = prefs.clearFavorites()
+    fun clearRecents() = prefs.clearRecents()
 
     // --- Cached catalog data (loaded once per session) ---
 

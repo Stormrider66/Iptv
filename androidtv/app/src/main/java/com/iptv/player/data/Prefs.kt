@@ -69,4 +69,29 @@ class Prefs(context: Context) {
     var lastChannelId: String
         get() = sp.getString("last_channel", "") ?: ""
         set(value) = sp.edit().putString("last_channel", value).apply()
+
+    // --- Resume playback positions for VOD / episodes ---
+
+    fun savePosition(key: String, positionMs: Long, durationMs: Long) {
+        // Only keep a resume point if we're past the intro and not at the very end
+        if (positionMs in 10_000 until (durationMs - 10_000).coerceAtLeast(10_000)) {
+            sp.edit().putLong("pos_$key", positionMs).apply()
+        } else {
+            clearPosition(key)
+        }
+    }
+
+    fun getPosition(key: String): Long = sp.getLong("pos_$key", 0L)
+
+    fun clearPosition(key: String) {
+        sp.edit().remove("pos_$key").apply()
+    }
+
+    fun clearFavorites() {
+        sp.edit().remove("favorites").apply()
+    }
+
+    fun clearRecents() {
+        sp.edit().remove("recents").remove("last_channel").apply()
+    }
 }

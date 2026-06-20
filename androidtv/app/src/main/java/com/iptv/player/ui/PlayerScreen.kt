@@ -50,10 +50,16 @@ import kotlinx.coroutines.delay
 @Composable
 fun PlayerScreen(vm: AppViewModel, screen: Screen) {
     val context = LocalContext.current
+    val activity = context as? com.iptv.player.MainActivity
     val api = vm.api ?: return
 
     // Resolve playback info from the screen type
     val isLive = screen is Screen.LivePlayer
+
+    // Resume key for VOD / episodes (null for live)
+    val resumeKey = remember(screen) {
+        (screen as? Screen.VodPlayer)?.let { "${it.item.kind}_${it.item.id}" }
+    }
     var channelIndex by remember { mutableIntStateOf((screen as? Screen.LivePlayer)?.index ?: 0) }
     val channels = (screen as? Screen.LivePlayer)?.channels ?: emptyList()
 
@@ -111,6 +117,23 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
         showOsd = true
         player.setMediaItem(MediaItem.fromUri(currentUrl))
         player.prepare()
+        // Resume from saved position for VOD / episodes
+        if (resumeKey != null) {
+            val savedPos = vm.getPosition(resumeKey)
+            if (savedPos > 0) player.seekTo(savedPos)
+        }
+    }
+
+    // Periodically persist playback position for VOD / episodes
+    LaunchedEffect(resumeKey) {
+        if (resumeKey == null) return@LaunchedEffect
+        while (true) {
+            delay(5000)
+            val dur = player.duration
+            if (dur > 0 && player.isPlaying) {
+                vm.savePosition(resumeKey, player.currentPosition, dur)
+            }
+        }
     }
 
     // Error listener
@@ -132,6 +155,11 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
         }
         player.addListener(listener)
         onDispose {
+            // Save final position for VOD / episodes before releasing
+            if (resumeKey != null) {
+                val dur = player.duration
+                if (dur > 0) vm.savePosition(resumeKey, player.currentPosition, dur)
+            }
             player.removeListener(listener)
             player.release()
         }
@@ -174,6 +202,11 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
                         showOsd = !showOsd
                         true
                     }
+                    // Enter picture-in-picture
+                    KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_WINDOW -> {
+                        activity?.maybeEnterPip()
+                        true
+                    }
                     // Seek forward/back for VOD
                     KeyEvent.KEYCODE_DPAD_RIGHT -> {
                         if (!isLive) {
@@ -204,8 +237,8 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
             modifier = Modifier.fillMaxSize(),
         )
 
-        // OSD overlay
-        if (showOsd) {
+        // OSD overlay (hidden in picture-in-picture)
+        if (showOsd && !vm.inPipMode) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -247,7 +280,7 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
         }
 
         // Error message
-        if (errorMsg != null) {
+        if (errorMsg != null && !vm.inPipMode) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,

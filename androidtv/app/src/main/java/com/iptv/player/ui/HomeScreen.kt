@@ -18,7 +18,7 @@ import androidx.tv.material3.TabRow
 import androidx.tv.material3.Text
 import com.iptv.player.AppViewModel
 
-private val tabs = listOf("Live-TV", "Filmer", "Serier", "Sök")
+private val tabs = listOf("Live-TV", "Filmer", "Serier", "Sök", "Inställningar")
 
 @Composable
 fun HomeScreen(vm: AppViewModel) {
@@ -49,6 +49,7 @@ fun HomeScreen(vm: AppViewModel) {
                 1 -> MoviesTab(vm)
                 2 -> SeriesTab(vm)
                 3 -> SearchTab(vm)
+                4 -> SettingsTab(vm)
             }
         }
     }
