@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <path
+        android:fillColor="#14141F"
+        android:pathData="M0,0 H320 V180 H0 Z" />
+
+    <!-- Accent rounded square -->
+    <path
+        android:fillColor="#6C5CE7"
+        android:pathData="M118,55 H170 A12,12 0 0 1 182,67 V113 A12,12 0 0 1 170,125 H118 A12,12 0 0 1 106,113 V67 A12,12 0 0 1 118,55 Z" />
+
+    <!-- Play triangle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M134,75 L160,90 L134,105 Z" />
+
+    <!-- Underline accent -->
+    <path
+        android:fillColor="#A29BFE"
+        android:pathData="M196,86 H214 V94 H196 Z" />
+</vector>
