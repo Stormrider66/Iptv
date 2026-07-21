@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,20 +66,48 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
     var channelIndex by remember { mutableIntStateOf((screen as? Screen.LivePlayer)?.index ?: 0) }
     val channels = (screen as? Screen.LivePlayer)?.channels ?: emptyList()
 
-    val currentUrl = remember(screen, channelIndex) {
+    // Candidate URLs to try, in order. Xtream panels serve the same stream under
+    // several container extensions and often report no container_extension at all
+    // for VOD, in which case the extension below is a guess: asking for the wrong
+    // one yields an error page that no extractor can read
+    // (UnrecognizedInputFormatException). Each failure advances to the next
+    // candidate; when they run out the user finally sees an error.
+    val candidates: List<String> = remember(screen, channelIndex) {
         when (screen) {
             is Screen.LivePlayer -> {
-                val ch = channels.getOrNull(channelIndex) ?: return@remember ""
-                api.liveUrl(ch.streamId)
+                val ch = channels.getOrNull(channelIndex) ?: return@remember emptyList<String>()
+                listOf(api.liveUrl(ch.streamId, "m3u8"), api.liveUrl(ch.streamId, "ts"))
             }
-            is Screen.VodPlayer -> when (screen.item.kind) {
-                StreamKind.MOVIE -> api.movieUrl(screen.item.id, screen.item.containerExtension)
-                StreamKind.EPISODE -> api.episodeUrl(screen.item.id, screen.item.containerExtension)
-                else -> ""
+            is Screen.VodPlayer -> {
+                val item = screen.item
+                // A reported extension is authoritative; otherwise try the common ones.
+                val exts = item.containerExtension?.let { listOf(it) }
+                    ?: listOf("mp4", "mkv", "avi")
+                exts.mapNotNull { ext ->
+                    when (item.kind) {
+                        StreamKind.MOVIE -> api.movieUrl(item.id, ext)
+                        StreamKind.EPISODE -> api.episodeUrl(item.id, ext)
+                        else -> null
+                    }
+                }
             }
-            else -> ""
+            else -> emptyList()
         }
     }
+
+    // Reset the position in the candidate list whenever the list itself changes
+    // (channel change, new item). Keying the remember does this during composition,
+    // so currentUrl below never briefly points at the previous item's fallback.
+    val candidateIndex = remember(candidates) { mutableIntStateOf(0) }
+    val playbackStarted = remember(candidates) { mutableStateOf(false) }
+
+    // The error listener is registered once for the player's whole lifetime, so it
+    // must read these through rememberUpdatedState rather than capturing them.
+    val latestCandidates by rememberUpdatedState(candidates)
+    val latestIndex by rememberUpdatedState(candidateIndex)
+    val latestStarted by rememberUpdatedState(playbackStarted)
+
+    val currentUrl = candidates.getOrNull(candidateIndex.intValue) ?: ""
 
     val currentTitle = remember(screen, channelIndex) {
         when (screen) {
@@ -117,8 +146,11 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
         if (currentUrl.isBlank()) return@LaunchedEffect
         errorMsg = null
         showOsd = true
+        playbackStarted.value = false
         player.setMediaItem(MediaItem.fromUri(currentUrl))
         player.prepare()
+        // A previous pause() cleared this, and it survives a channel change.
+        player.playWhenReady = true
         // Resume from saved position for VOD / episodes
         if (resumeKey != null) {
             val savedPos = vm.getPosition(resumeKey)
@@ -141,16 +173,20 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
     // Error listener
     DisposableEffect(player) {
         val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY) latestStarted.value = true
+            }
+
             override fun onPlayerError(error: PlaybackException) {
-                // Try TS fallback for live
-                if (isLive) {
-                    val ch = channels.getOrNull(channelIndex)
-                    if (ch != null && currentUrl.endsWith(".m3u8")) {
-                        val tsUrl = api.liveUrl(ch.streamId, "ts")
-                        player.setMediaItem(MediaItem.fromUri(tsUrl))
-                        player.prepare()
-                        return
-                    }
+                // Only fall through to another container while the stream has never
+                // played - a mid-playback network blip must not switch URLs.
+                val canFallBack = !latestStarted.value &&
+                    latestIndex.intValue < latestCandidates.lastIndex
+                if (canFallBack) {
+                    // Advancing the index re-runs LaunchedEffect(currentUrl), which
+                    // loads the next candidate. No unbounded retry of a dead URL.
+                    latestIndex.intValue += 1
+                    return
                 }
                 errorMsg = "Uppspelningsfel: ${error.localizedMessage ?: "okänt fel"}"
             }
