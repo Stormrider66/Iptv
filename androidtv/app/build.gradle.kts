@@ -16,7 +16,25 @@ android {
         versionName = "1.1"
     }
 
+    signingConfigs {
+        // Checked-in debug key. Without it every CI runner generates its own
+        // ~/.android/debug.keystore, so each build is signed with a different
+        // key and installing a new APK over an old one fails with
+        // INSTALL_FAILED_UPDATE_INCOMPATIBLE (requiring an uninstall, which
+        // wipes the saved login). This key is debug-only and carries no
+        // security value - never use it for a release build.
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
