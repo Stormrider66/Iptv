@@ -45,10 +45,9 @@ class Prefs(context: Context) {
 
     fun isFavorite(streamId: String): Boolean = favorites().contains(streamId)
 
-    fun toggleFavorite(streamId: String) {
-        val current = favorites().toMutableSet()
-        if (!current.add(streamId)) current.remove(streamId)
-        sp.edit().putStringSet("favorites", current).apply()
+    /** Replaces the stored set. The in-memory list in AppViewModel is the source of truth. */
+    fun setFavorites(ids: Set<String>) {
+        sp.edit().putStringSet("favorites", ids).apply()
     }
 
     // --- Recently watched (live channels), most recent first ---
@@ -58,12 +57,9 @@ class Prefs(context: Context) {
         return if (raw.isBlank()) emptyList() else raw.split(",")
     }
 
-    fun addRecent(streamId: String) {
-        val list = recents().toMutableList()
-        list.remove(streamId)
-        list.add(0, streamId)
-        while (list.size > 30) list.removeAt(list.size - 1)
-        sp.edit().putString("recents", list.joinToString(",")).apply()
+    /** Replaces the stored list. The in-memory list in AppViewModel is the source of truth. */
+    fun setRecents(ids: List<String>) {
+        sp.edit().putString("recents", ids.joinToString(",")).apply()
     }
 
     var lastChannelId: String

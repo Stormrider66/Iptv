@@ -2,6 +2,7 @@ package com.iptv.player.ui
 
 import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -32,6 +33,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -117,17 +122,56 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
         }
     }
 
-    // ExoPlayer instance
+    // ExoPlayer instance. handleAudioFocus makes it duck/pause for other apps and
+    // system sounds instead of talking over them.
     val player = remember {
-        ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
-        }
+        ExoPlayer.Builder(context)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus = */ true,
+            )
+            .build()
+            .apply { playWhenReady = true }
     }
 
     // OSD visibility
     var showOsd by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
+
+    // Bumped to re-run the load effect when the user retries after an error.
+    var retryToken by remember { mutableIntStateOf(0) }
+
+    // Pause when the activity stops, unless we stopped because we entered PiP.
+    // Without this the player keeps decoding and playing audio in the background
+    // on any path that does not route through onUserLeaveHint.
+    val lifecycle = activity?.lifecycle
+    DisposableEffect(lifecycle) {
+        if (lifecycle == null) return@DisposableEffect onDispose { }
+        var pausedByLifecycle = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    if (!vm.inPipMode && player.isPlaying) {
+                        pausedByLifecycle = true
+                        player.pause()
+                    }
+                }
+                Lifecycle.Event.ON_START -> {
+                    if (pausedByLifecycle) {
+                        pausedByLifecycle = false
+                        player.play()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -141,8 +185,8 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
         }
     }
 
-    // Load media when URL changes
-    LaunchedEffect(currentUrl) {
+    // Load media when the URL changes, or when the user asks to retry
+    LaunchedEffect(currentUrl, retryToken) {
         if (currentUrl.isBlank()) return@LaunchedEffect
         errorMsg = null
         showOsd = true
@@ -156,6 +200,13 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
             val savedPos = vm.getPosition(resumeKey)
             if (savedPos > 0) player.seekTo(savedPos)
         }
+    }
+
+    // Record the channel you actually settled on, not every one you zapped past.
+    LaunchedEffect(channelIndex) {
+        if (!isLive) return@LaunchedEffect
+        delay(2000)
+        channels.getOrNull(channelIndex)?.let { vm.addRecent(it.streamId) }
     }
 
     // Periodically persist playback position for VOD / episodes
@@ -177,6 +228,17 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
                 if (state == Player.STATE_READY) latestStarted.value = true
             }
 
+            // Nothing resets the idle timer while a film plays (there is no
+            // controller taking input), so hold the display awake ourselves.
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                val window = activity?.window ?: return
+                if (isPlaying) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 // Only fall through to another container while the stream has never
                 // played - a mid-playback network blip must not switch URLs.
@@ -193,6 +255,7 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
         }
         player.addListener(listener)
         onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             // Save final position for VOD / episodes before releasing
             if (resumeKey != null) {
                 val dur = player.duration
@@ -211,27 +274,35 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
             .focusable()
             .onKeyEvent { event ->
                 if (event.nativeKeyEvent.action != KeyEvent.ACTION_DOWN) return@onKeyEvent false
+                // Auto-repeat arrives as further ACTION_DOWN events with repeatCount > 0.
+                // Holding the D-pad used to fire ~15 channel changes a second, each one a
+                // prepare() against the provider and a recents write. Swallow the repeats.
+                if (event.nativeKeyEvent.repeatCount > 0) return@onKeyEvent true
                 when (event.nativeKeyEvent.keyCode) {
                     // Channel up/down for live TV
                     KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_DPAD_UP -> {
                         if (isLive && channels.isNotEmpty()) {
                             channelIndex = (channelIndex - 1 + channels.size) % channels.size
-                            val ch = channels[channelIndex]
-                            vm.addRecent(ch.streamId)
                             true
                         } else false
                     }
                     KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_DPAD_DOWN -> {
                         if (isLive && channels.isNotEmpty()) {
                             channelIndex = (channelIndex + 1) % channels.size
-                            val ch = channels[channelIndex]
-                            vm.addRecent(ch.streamId)
                             true
                         } else false
                     }
-                    // Toggle play/pause
+                    // Toggle play/pause, or retry after a failure
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_DPAD_CENTER -> {
-                        if (player.isPlaying) player.pause() else player.play()
+                        if (errorMsg != null) {
+                            // The player is IDLE after an error - play() would be a no-op.
+                            // Start over from the first candidate.
+                            errorMsg = null
+                            candidateIndex.intValue = 0
+                            retryToken += 1
+                        } else {
+                            if (player.isPlaying) player.pause() else player.play()
+                        }
                         showOsd = true
                         true
                     }
@@ -328,7 +399,7 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = errorMsg ?: "",
+                    text = (errorMsg ?: "") + "\n\nTryck OK för att försöka igen.",
                     color = Accent,
                     fontSize = 16.sp,
                     modifier = Modifier

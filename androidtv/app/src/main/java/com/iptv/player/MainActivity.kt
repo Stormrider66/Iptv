@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import com.iptv.player.ui.HomeScreen
@@ -79,11 +80,25 @@ private fun AppRoot(vm: AppViewModel, onExit: () -> Unit) {
         if (!vm.back()) onExit()
     }
 
-    when (screen) {
-        is Screen.Login -> LoginScreen(vm)
-        is Screen.Home -> HomeScreen(vm)
-        is Screen.SeriesDetail -> SeriesDetailScreen(vm, screen.series)
-        is Screen.LivePlayer -> PlayerScreen(vm, screen)
-        is Screen.VodPlayer -> PlayerScreen(vm, screen)
+    // Opening a player replaces the whole tree, which used to discard every
+    // rememberSaveable underneath it - coming back landed you on tab 0 at the top
+    // of "Senaste". The holder keeps each screen's saveable state keyed by screen.
+    val stateHolder = rememberSaveableStateHolder()
+    val screenKey = when (screen) {
+        is Screen.Login -> "login"
+        is Screen.Home -> "home"
+        is Screen.SeriesDetail -> "series:${screen.series.seriesId}"
+        is Screen.LivePlayer -> "live"
+        is Screen.VodPlayer -> "vod:${screen.item.kind}:${screen.item.id}"
+    }
+
+    stateHolder.SaveableStateProvider(screenKey) {
+        when (screen) {
+            is Screen.Login -> LoginScreen(vm)
+            is Screen.Home -> HomeScreen(vm)
+            is Screen.SeriesDetail -> SeriesDetailScreen(vm, screen.series)
+            is Screen.LivePlayer -> PlayerScreen(vm, screen)
+            is Screen.VodPlayer -> PlayerScreen(vm, screen)
+        }
     }
 }

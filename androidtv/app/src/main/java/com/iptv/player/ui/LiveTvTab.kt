@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +55,8 @@ fun LiveTvTab(vm: AppViewModel) {
     var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
     var allChannels by remember { mutableStateOf<List<LiveChannel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var selectedCat by remember { mutableStateOf(CAT_RECENT) }
+    // rememberSaveable so returning from the player restores the browsed category
+    var selectedCat by rememberSaveable { mutableStateOf(CAT_RECENT) }
     var focused by remember { mutableStateOf<LiveChannel?>(null) }
 
     LaunchedEffect(Unit) {
@@ -76,10 +78,13 @@ fun LiveTvTab(vm: AppViewModel) {
     }
 
     val byId = remember(allChannels) { allChannels.associateBy { it.streamId } }
-    val visible = remember(selectedCat, allChannels) {
+    // Read the snapshot lists here so favouriting / watching re-runs this block.
+    val favSnapshot = vm.favorites.toList()
+    val recentSnapshot = vm.recents.toList()
+    val visible = remember(selectedCat, allChannels, favSnapshot, recentSnapshot) {
         when (selectedCat) {
-            CAT_RECENT -> vm.recents().mapNotNull { byId[it] }
-            CAT_FAV -> vm.favorites().mapNotNull { byId[it] }
+            CAT_RECENT -> recentSnapshot.mapNotNull { byId[it] }
+            CAT_FAV -> favSnapshot.mapNotNull { byId[it] }
             else -> allChannels.filter { it.categoryId == selectedCat }
         }
     }
@@ -115,7 +120,7 @@ fun LiveTvTab(vm: AppViewModel) {
             itemsIndexed(visible, key = { _, c -> c.streamId }) { index, channel ->
                 ChannelRow(
                     channel = channel,
-                    isFavorite = vm.isFavorite(channel.streamId),
+                    isFavorite = favSnapshot.contains(channel.streamId),
                     onClick = {
                         vm.addRecent(channel.streamId)
                         vm.navigate(Screen.LivePlayer(visible, index))

@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.AndroidViewModel
 import com.iptv.player.data.Category
 import com.iptv.player.data.LiveChannel
@@ -60,6 +61,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun logout() {
         prefs.clearCredentials()
         api = null
+        favorites.clear()
+        recents.clear()
         liveCatsCache = null
         movieCatsCache = null
         seriesCatsCache = null
@@ -81,16 +84,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    // --- Favorites / recents passthrough ---
+    // --- Favorites / recents ---
 
-    fun isFavorite(streamId: String) = prefs.isFavorite(streamId)
-    fun toggleFavorite(streamId: String) = prefs.toggleFavorite(streamId)
-    fun favorites() = prefs.favorites()
+    /**
+     * Snapshot-backed so the UI actually recomposes when a channel is favourited.
+     * Reading it straight from SharedPreferences left the star frozen until some
+     * unrelated recomposition happened to re-read it.
+     */
+    val favorites: SnapshotStateList<String> =
+        mutableStateListOf<String>().apply { addAll(prefs.favorites()) }
+
+    fun isFavorite(streamId: String): Boolean = favorites.contains(streamId)
+
+    fun toggleFavorite(streamId: String) {
+        if (!favorites.remove(streamId)) favorites.add(streamId)
+        prefs.setFavorites(favorites.toSet())
+    }
+
+    /** Recents are snapshot-backed for the same reason. */
+    val recents: SnapshotStateList<String> =
+        mutableStateListOf<String>().apply { addAll(prefs.recents()) }
+
     fun addRecent(streamId: String) {
-        prefs.addRecent(streamId)
+        recents.remove(streamId)
+        recents.add(0, streamId)
+        while (recents.size > 30) recents.removeAt(recents.size - 1)
+        prefs.setRecents(recents.toList())
         prefs.lastChannelId = streamId
     }
-    fun recents() = prefs.recents()
 
     // --- Resume playback ---
 
@@ -101,8 +122,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Settings actions ---
 
-    fun clearFavorites() = prefs.clearFavorites()
-    fun clearRecents() = prefs.clearRecents()
+    fun clearFavorites() {
+        favorites.clear()
+        prefs.clearFavorites()
+    }
+
+    fun clearRecents() {
+        recents.clear()
+        prefs.clearRecents()
+    }
 
     // --- Cached catalog data (loaded once per session) ---
 
