@@ -1,6 +1,7 @@
 package com.iptv.player.ui
 
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -38,6 +39,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import com.iptv.player.AppViewModel
+import com.iptv.player.R
 import com.iptv.player.Screen
 import com.iptv.player.data.LiveChannel
 import com.iptv.player.data.StreamKind
@@ -226,10 +228,14 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
                 }
             },
     ) {
-        // ExoPlayer view
+        // ExoPlayer view — inflated from XML so it uses a TextureView surface.
+        // A SurfaceView lands in its own layer below the app window and the
+        // Compose content above it covers the picture (audio only, black screen).
         AndroidView(
             factory = { ctx ->
-                PlayerView(ctx).apply {
+                val view = LayoutInflater.from(ctx)
+                    .inflate(R.layout.player_view, null) as PlayerView
+                view.apply {
                     this.player = player
                     useController = false
                 }

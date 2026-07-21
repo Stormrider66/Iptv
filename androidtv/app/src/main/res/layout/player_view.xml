@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PlayerView is inflated from XML so it can use a TextureView for video output.
+  The default surface_type (SurfaceView) renders into its own SurfaceFlinger
+  layer beneath the app window, and the opaque Compose content above it hides
+  the picture entirely: audio plays, the screen stays on the theme background.
+  A TextureView draws inside the view hierarchy, so it composes with Compose.
+-->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/player_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    app:surface_type="texture_view"
+    app:use_controller="false"
+    app:resize_mode="fit" />
