@@ -155,7 +155,10 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_STOP -> {
-                    if (!vm.inPipMode && player.isPlaying) {
+                    // Test intent, not isPlaying: the latter is false while buffering and
+                    // while audio focus is transiently lost, and in both of those windows
+                    // playback would resume itself with the activity stopped.
+                    if (!vm.inPipMode && player.playWhenReady) {
                         pausedByLifecycle = true
                         player.pause()
                     }
@@ -163,6 +166,12 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
                 Lifecycle.Event.ON_START -> {
                     if (pausedByLifecycle) {
                         pausedByLifecycle = false
+                        // A live stream cannot resume where it left off - the buffered
+                        // position is long past the edge by now. Rejoin the live edge.
+                        if (isLive) {
+                            player.seekToDefaultPosition()
+                            player.prepare()
+                        }
                         player.play()
                     }
                 }
@@ -276,8 +285,13 @@ fun PlayerScreen(vm: AppViewModel, screen: Screen) {
                 if (event.nativeKeyEvent.action != KeyEvent.ACTION_DOWN) return@onKeyEvent false
                 // Auto-repeat arrives as further ACTION_DOWN events with repeatCount > 0.
                 // Holding the D-pad used to fire ~15 channel changes a second, each one a
-                // prepare() against the provider and a recents write. Swallow the repeats.
-                if (event.nativeKeyEvent.repeatCount > 0) return@onKeyEvent true
+                // prepare() against the provider and a recents write. Swallow the repeats
+                // for zapping only - hold-to-seek on VOD depends on them.
+                val zapKey = event.nativeKeyEvent.keyCode.let {
+                    it == KeyEvent.KEYCODE_CHANNEL_UP || it == KeyEvent.KEYCODE_CHANNEL_DOWN ||
+                        it == KeyEvent.KEYCODE_DPAD_UP || it == KeyEvent.KEYCODE_DPAD_DOWN
+                }
+                if (zapKey && event.nativeKeyEvent.repeatCount > 0) return@onKeyEvent true
                 when (event.nativeKeyEvent.keyCode) {
                     // Channel up/down for live TV
                     KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_DPAD_UP -> {

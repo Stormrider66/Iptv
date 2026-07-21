@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,7 +56,7 @@ import com.iptv.player.ui.theme.TextSecondary
 
 @Composable
 fun SearchTab(vm: AppViewModel) {
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
     var allChannels by remember { mutableStateOf<List<LiveChannel>>(emptyList()) }
     var allMovies by remember { mutableStateOf<List<Movie>>(emptyList()) }
     var allSeries by remember { mutableStateOf<List<Series>>(emptyList()) }

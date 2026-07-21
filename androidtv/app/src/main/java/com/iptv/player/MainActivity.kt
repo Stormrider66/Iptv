@@ -92,6 +92,14 @@ private fun AppRoot(vm: AppViewModel, onExit: () -> Unit) {
         is Screen.VodPlayer -> "vod:${screen.item.kind}:${screen.item.id}"
     }
 
+    // Logging out must not leave the previous session's tab and category behind for
+    // the next login - "Logga ut" lives on tab 4, so it would reopen on Inställningar.
+    if (screen is Screen.Login) {
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            stateHolder.removeState("home")
+        }
+    }
+
     stateHolder.SaveableStateProvider(screenKey) {
         when (screen) {
             is Screen.Login -> LoginScreen(vm)

@@ -54,6 +54,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun onLoginSuccess(server: String, username: String, password: String) {
         prefs.saveCredentials(server, username, password)
         api = XtreamApi(server, username, password)
+        // The lists are the source of truth and write through on every change, so they
+        // MUST be re-seeded from disk here. logout() empties them but leaves the stored
+        // values alone; without this the first favourite or channel opened after a
+        // re-login would overwrite the whole saved set with a single entry.
+        favorites.clear()
+        favorites.addAll(prefs.favorites())
+        recents.clear()
+        recents.addAll(prefs.recents())
         backStack.clear()
         backStack.add(Screen.Home)
     }

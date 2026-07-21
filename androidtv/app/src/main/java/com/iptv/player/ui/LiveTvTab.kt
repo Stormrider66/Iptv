@@ -69,6 +69,8 @@ fun LiveTvTab(vm: AppViewModel) {
             addAll(cats)
         }
         allChannels = chans
+        // A restored category may not exist for this account any more.
+        if (categories.none { it.id == selectedCat }) selectedCat = CAT_RECENT
         loading = false
     }
 

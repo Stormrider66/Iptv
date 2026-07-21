@@ -1,5 +1,6 @@
 package com.iptv.player.ui
 
+import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -19,10 +20,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,10 +55,43 @@ fun FocusRow(
             if (focused) onFocus()
         }
     }
+    // combinedClickable only raises onLongClick from pointer input and accessibility -
+    // its key handling knows about clicks alone. On a D-pad remote there is no pointer,
+    // so holding OK just produced a click and long-press actions were unreachable.
+    // Detect the hold ourselves from the auto-repeat, ahead of combinedClickable.
+    val longPressFired = remember { mutableStateOf(false) }
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(if (focused) Accent else Color.Transparent)
+            .onPreviewKeyEvent { event ->
+                val native = event.nativeKeyEvent
+                val isSelect = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                    native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                if (onLongClick == null || !isSelect) return@onPreviewKeyEvent false
+                when (native.action) {
+                    KeyEvent.ACTION_DOWN -> when {
+                        // Swallow every repeat after the one that triggered the hold.
+                        longPressFired.value -> true
+                        native.repeatCount >= 1 -> {
+                            longPressFired.value = true
+                            onLongClick()
+                            true
+                        }
+                        // Let the initial press through so a tap still clicks.
+                        else -> false
+                    }
+                    // Eat the release that would otherwise fire onClick as well.
+                    KeyEvent.ACTION_UP -> if (longPressFired.value) {
+                        longPressFired.value = false
+                        true
+                    } else {
+                        false
+                    }
+                    else -> false
+                }
+            }
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,

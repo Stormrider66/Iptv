@@ -15,6 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,7 +38,7 @@ import com.iptv.player.ui.theme.TextSecondary
 @Composable
 fun SeriesDetailScreen(vm: AppViewModel, series: Series) {
     var seasons by remember { mutableStateOf<List<Season>?>(null) }
-    var selectedSeason by remember { mutableStateOf(0) }
+    var selectedSeason by rememberSaveable { mutableStateOf(0) }
 
     LaunchedEffect(series.seriesId) {
         seasons = try {
@@ -45,6 +46,10 @@ fun SeriesDetailScreen(vm: AppViewModel, series: Series) {
         } catch (e: Exception) {
             emptyList()
         }
+        // selectedSeason is restored from saved state and may index a season the
+        // freshly loaded list no longer has.
+        val loaded = seasons
+        if (loaded != null && selectedSeason > loaded.lastIndex) selectedSeason = 0
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
